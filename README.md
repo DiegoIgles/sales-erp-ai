@@ -47,7 +47,7 @@ Desarrollado en solo un fin de semana como reto técnico, este sistema demuestra
 1. Clona el repositorio:
 
 ```bash
-git clone https://github.com/tuusuario/sales-erp-ai.git
+git clone https://github.com/DiegoIgles/sales-erp-ai.git
 cd sales-erp-ai
 ```
 
