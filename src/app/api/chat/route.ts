@@ -155,16 +155,23 @@ const createOrder = tool<{
 
 // ✅ Configuración de empresa
 const loadCompanySettings = async () => {
-  const settings = await prisma.companySettings.findFirst()
-  return (
-    settings || {
-      name: 'Empresa Genérica',
-      personality: 'Amable y profesional',
-      description: 'Vendemos productos de calidad',
-      messaging: '¡Gracias por confiar en nosotros!',
-    }
-  )
+  try {
+    const settings = await prisma.companySettings.findFirst()
+    console.log('📄 Configuración cargada:', settings)
+    return (
+      settings || {
+        name: 'Empresa Genérica',
+        personality: 'Amable y profesional',
+        description: 'Vendemos productos de calidad',
+        messaging: '¡Gracias por confiar en nosotros!',
+      }
+    )
+  } catch (error) {
+    console.error('❌ Error al cargar configuración de empresa:', error)
+    throw error
+  }
 }
+
 
 // ✅ POST /api/chat
 export async function POST(req: Request) {
