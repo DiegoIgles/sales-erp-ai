@@ -39,8 +39,13 @@ export async function DELETE(
     })
 
     return NextResponse.json({ message: 'Producto eliminado', product: deleted })
-  } catch (error: any) {
-    if (error.code === 'P2025') {
+  } catch (error: unknown) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as any).code === 'P2025'
+    ) {
       // Prisma: record not found
       return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 })
     }
@@ -98,8 +103,13 @@ export async function PATCH(
     })
 
     return NextResponse.json(updated)
-  } catch (error: any) {
-    if (error.code === 'P2025') {
+  } catch (error: unknown) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as any).code === 'P2025'
+    ) {
       return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 })
     }
 
