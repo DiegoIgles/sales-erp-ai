@@ -1,12 +1,18 @@
 import { PrismaClient } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import fs from 'fs'
-import path from 'path'
+import { v2 as cloudinary } from 'cloudinary'
 
 const prisma = new PrismaClient()
 
-// ✅ Validación con Zod
+// 🛠️ Configurar Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
+})
+
+// ✅ Esquema Zod
 const productSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
@@ -15,6 +21,8 @@ const productSchema = z.object({
   category: z.string().min(1),
   imageUrl: z.string().optional(),
 })
+
+type ProductInput = z.infer<typeof productSchema>
 
 // 📦 GET: Listar productos
 export async function GET() {
@@ -29,45 +37,47 @@ export async function GET() {
   }
 }
 
-// ➕ POST: Crear nuevo producto
+// ➕ POST: Crear producto
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
+    const contentType = request.headers.get('content-type') || ''
 
-    const name = formData.get('name')?.toString() || ''
-    const description = formData.get('description')?.toString() || ''
-    const price = Number(formData.get('price'))
-    const stock = Number(formData.get('stock'))
-    const category = formData.get('category')?.toString() || ''
-    const imageFile = formData.get('image') as File | null
+    let data: Partial<ProductInput> = {}
+    let imageFile: File | null = null
 
-    let imageUrl = ''
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
 
-    // 🖼 Guardar imagen si existe
-    if (imageFile) {
-      const arrayBuffer = await imageFile.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
+      data = {
+        name: formData.get('name')?.toString() || '',
+        description: formData.get('description')?.toString() || '',
+        price: Number(formData.get('price')),
+        stock: Number(formData.get('stock')),
+        category: formData.get('category')?.toString() || '',
+      }
 
-      const fileName = `${Date.now()}_${imageFile.name}`
-      const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-      const filePath = path.join(uploadDir, fileName)
+      imageFile = formData.get('image') as File | null
 
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+      // 🌥 Subir imagen a Cloudinary si existe
+      if (imageFile) {
+        const arrayBuffer = await imageFile.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+        const base64Image = `data:${imageFile.type};base64,${buffer.toString('base64')}`
 
-      fs.writeFileSync(filePath, buffer)
+        const result = await cloudinary.uploader.upload(base64Image, {
+          folder: 'products',
+        })
 
-      imageUrl = `/uploads/${fileName}`
+        data.imageUrl = result.secure_url // ✅ URL pública de Cloudinary
+      }
+    } else if (contentType.includes('application/json')) {
+      data = await request.json()
+    } else {
+      return NextResponse.json({ error: 'Tipo de contenido no soportado' }, { status: 415 })
     }
 
-    // ✅ Validar con Zod
-    const parsed = productSchema.safeParse({
-      name,
-      description,
-      price,
-      stock,
-      category,
-      imageUrl,
-    })
+    // ✅ Validación
+    const parsed = productSchema.safeParse(data)
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -76,7 +86,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 💾 Guardar producto en BD
+    // 💾 Guardar en BD
     const newProduct = await prisma.product.create({
       data: parsed.data,
     })

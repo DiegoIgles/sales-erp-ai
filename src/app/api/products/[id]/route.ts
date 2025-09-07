@@ -1,9 +1,26 @@
 import { PrismaClient } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
+import { v2 as cloudinary } from 'cloudinary'
+import { Readable } from 'stream'
+
 const prisma = new PrismaClient()
 
+// Configurar Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
+})
+
+// Utilidad: convertir buffer a stream
+function bufferToStream(buffer: Buffer) {
+  const readable = new Readable()
+  readable.push(buffer)
+  readable.push(null)
+  return readable
+}
+
+// ✅ Obtener producto por ID
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -11,9 +28,7 @@ export async function GET(
   const { id } = params
 
   try {
-    const product = await prisma.product.findUnique({
-      where: { id },
-    })
+    const product = await prisma.product.findUnique({ where: { id } })
 
     if (!product) {
       return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 })
@@ -26,7 +41,7 @@ export async function GET(
   }
 }
 
-// ✅ Eliminar un producto por ID
+// ✅ Eliminar producto por ID
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -44,9 +59,8 @@ export async function DELETE(
       typeof error === 'object' &&
       error !== null &&
       'code' in error &&
-      (error as any).code === 'P2025'
+      (error as { code: string }).code === 'P2025'
     ) {
-      // Prisma: record not found
       return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 })
     }
 
@@ -55,7 +69,7 @@ export async function DELETE(
   }
 }
 
-// ✏️ Actualizar producto por ID
+// ✅ Actualizar producto por ID con imagen en Cloudinary
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -72,22 +86,24 @@ export async function PATCH(
     const category = formData.get('category')?.toString() || ''
     const imageFile = formData.get('image') as File | null
 
-    // Si ya había una imagen previa (por ejemplo en un campo oculto del formulario)
+    // Si ya había una imagen previa
     let imageUrl = formData.get('existingImageUrl')?.toString() || ''
 
-    // Si se subió una nueva imagen, la reemplazamos
+    // Si se subió una nueva imagen
     if (imageFile && imageFile.size > 0) {
       const arrayBuffer = await imageFile.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
 
-      const fileName = `${Date.now()}_${imageFile.name}`
-      const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-      const filePath = path.join(uploadDir, fileName)
-
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
-      fs.writeFileSync(filePath, buffer)
-
-      imageUrl = `/uploads/${fileName}`
+      imageUrl = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { folder: 'products' },
+          (err, result) => {
+            if (err || !result) return reject(err)
+            resolve(result.secure_url)
+          }
+        )
+        bufferToStream(buffer).pipe(uploadStream)
+      })
     }
 
     const updated = await prisma.product.update({
@@ -108,7 +124,7 @@ export async function PATCH(
       typeof error === 'object' &&
       error !== null &&
       'code' in error &&
-      (error as any).code === 'P2025'
+      (error as { code: string }).code === 'P2025'
     ) {
       return NextResponse.json({ error: 'Producto no encontrado' }, { status: 404 })
     }
